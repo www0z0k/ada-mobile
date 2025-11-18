@@ -57,9 +57,13 @@
       overflow-wrap: break-word;
       word-wrap: break-word;
     }
-    /* force normal wrapping even if Ada uses pre-ish spacing */
     #text * {
       white-space: normal !important;
+    }
+    /* kill original manual column breaks */
+    #text br,
+    #overlay-content br {
+      display: none;
     }
     #text a {
       color: #6ab4ff;
@@ -152,7 +156,6 @@
       text-underline-offset: 2px;
     }
 
-    /* tooltip now unused but kept hidden as a safety spare */
     #tooltip {
       display: none;
     }
@@ -195,6 +198,8 @@
   </div>
 
   <script>
+    const ADA_BASE = 'https://www.ada.auckland.ac.nz/';
+
     const chapterSelect   = document.getElementById('chapter-select');
     const chapterTitle    = document.getElementById('chapter-title');
     const textContainer   = document.getElementById('text');
@@ -207,7 +212,7 @@
 
     let notesDom = null;
     let notesHtml = '';
-    let overlayStack = [];  // stack of { html, title }
+    let overlayStack = [];
 
     async function fetchJSON(url) {
       const res = await fetch(url);
@@ -252,25 +257,49 @@
       wireTextLinks(textContainer);
     }
 
-    function isAdaLocalHref(href) {
-      if (!href) return true; // plain <a> around phrase
+    function isAdaNoteHref(href) {
+      if (!href) return true;
       href = href.trim();
-      if (href === '#' || href === '') return true;
+      if (href === '' || href === '#') return true;
       if (href.startsWith('#')) return true;
       if (/ada\d+ann\.htm/i.test(href)) return true;
       if (/ada\d+\.htm/i.test(href)) return true;
-      if (/^https?:\/\/www\.ada\.auckland\.ac\.nz/i.test(href)) return true;
       return false;
+    }
+
+    function isRelativeAdaDoc(href) {
+      if (!href) return false;
+      if (/^https?:\/\//i.test(href)) {
+        return /^https?:\/\/www\.ada\.auckland\.ac\.nz/i.test(href);
+      }
+      // bare "motifs.htm", "persons.htm", "/motifs.htm", etc.
+      return /\.htm$/i.test(href);
+    }
+
+    function makeAdaAbsolute(href) {
+      if (!href) return ADA_BASE;
+      if (/^https?:\/\//i.test(href)) return href;
+      return ADA_BASE + href.replace(/^\/+/, '');
     }
 
     function wireTextLinks(root) {
       const links = root.querySelectorAll('a');
       links.forEach(a => {
-        const href = a.getAttribute('href') || '';
-        if (isAdaLocalHref(href)) {
+        const rawHref = a.getAttribute('href') || '';
+
+        if (isAdaNoteHref(rawHref)) {
           a.classList.add('note-link');
           a.addEventListener('click', onNoteClick);
+        } else if (isRelativeAdaDoc(rawHref)) {
+          const abs = makeAdaAbsolute(rawHref);
+          a.setAttribute('href', abs);
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
         } else {
+          if (rawHref && !/^https?:\/\//i.test(rawHref)) {
+            // make other relative links absolute to current origin just so they resolve
+            a.href = rawHref;
+          }
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
         }
@@ -280,10 +309,19 @@
     function wireOverlayLinks() {
       const links = overlayContent.querySelectorAll('a');
       links.forEach(a => {
-        const href = a.getAttribute('href') || '';
-        if (isAdaLocalHref(href)) {
+        const rawHref = a.getAttribute('href') || '';
+
+        if (isAdaNoteHref(rawHref)) {
           a.addEventListener('click', onOverlayNoteClick);
+        } else if (isRelativeAdaDoc(rawHref)) {
+          const abs = makeAdaAbsolute(rawHref);
+          a.setAttribute('href', abs);
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
         } else {
+          if (rawHref && !/^https?:\/\//i.test(rawHref)) {
+            a.href = rawHref;
+          }
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
         }
@@ -340,7 +378,6 @@
 
       const fullText = normalize(notesDom.textContent || '');
       if (fullText.includes(normPhrase)) {
-        // found somewhere but not neatly; let caller decide to use full notes
         return '';
       }
 
@@ -418,7 +455,6 @@
       });
     });
 
-    // init
     loadChapterList().catch(err => {
       console.error(err);
       textContainer.textContent = 'Failed to load chapter list.';
