@@ -10,7 +10,10 @@
       background: #0a0a0a;
       color: #f5f5f5;
     }
-    body { margin: 0; background: #0a0a0a; }
+    body {
+      margin: 0;
+      background: #0a0a0a;
+    }
     #app {
       max-width: 700px;
       margin: 0 auto;
@@ -50,32 +53,43 @@
       line-height: 1.6;
       font-size: 17px;
     }
-    #text { overflow-wrap: break-word; }
+    #text {
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+    /* force normal wrapping even if Ada uses pre-ish spacing */
+    #text * {
+      white-space: normal !important;
+    }
     #text a {
       color: #6ab4ff;
       text-decoration: underline;
       text-decoration-thickness: 1px;
       text-underline-offset: 2px;
     }
+
+    /* Fullscreen overlay for notes */
     #overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.8);
       display: none;
       z-index: 100;
-      align-items: flex-end;
+      align-items: stretch;
+      justify-content: center;
     }
-    #overlay.visible { display: flex; }
+    #overlay.visible {
+      display: flex;
+    }
     #overlay-inner {
-      background: #111;
-      border-radius: 16px 16px 0 0;
-      max-height: 80vh;
+      background: #0b0b0b;
+      border-radius: 0;
       width: 100%;
       max-width: 700px;
-      margin: 0 auto;
-      box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+      height: 100vh;
       display: flex;
       flex-direction: column;
+      box-shadow: 0 0 40px rgba(0,0,0,0.6);
     }
     #overlay-header {
       display: flex;
@@ -83,44 +97,72 @@
       justify-content: space-between;
       padding: 10px 14px;
       border-bottom: 1px solid #222;
+      background: #101010;
     }
-    #overlay-header span {
+    #overlay-header-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #overlay-title {
       font-size: 14px;
       color: #aaa;
+      max-width: 60vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    #overlay-header button {
-      background: #222;
-      border: none;
-      color: #f5f5f5;
+    .overlay-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 16px;
+      border: 1px solid #333;
+      background: #181818;
+      color: #f5f5f5;
+      width: 30px;
+      height: 30px;
+      font-size: 18px;
+      padding: 0;
+    }
+    #overlay-back {
+      display: none;
+    }
+    #overlay.has-stack #overlay-back {
+      display: inline-flex;
     }
     #overlay-content {
-      padding: 10px 14px 16px;
+      padding: 12px 16px 24px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-      font-size: 15px;
-      line-height: 1.5;
+      font-size: 17px;
+      line-height: 1.6;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+    #overlay-content * {
+      font-size: inherit !important;
+      line-height: inherit !important;
+      white-space: normal !important;
     }
     #overlay-content a {
       color: #6ab4ff;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
     }
+
+    /* tooltip now unused but kept hidden as a safety spare */
     #tooltip {
-      position: fixed;
-      max-width: 90vw;
-      background: #111;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
-      line-height: 1.4;
-      z-index: 90;
       display: none;
     }
+
     @media (max-width: 480px) {
       main {
         padding-inline: 14px;
+        font-size: 16px;
+      }
+      #overlay-content {
         font-size: 16px;
       }
     }
@@ -136,28 +178,36 @@
       <div id="text">Loading…</div>
     </main>
   </div>
+
   <div id="tooltip"></div>
+
   <div id="overlay">
     <div id="overlay-inner">
       <div id="overlay-header">
-        <span id="overlay-title">Commentary</span>
-        <button id="overlay-close">✕</button>
+        <div id="overlay-header-left">
+          <button id="overlay-back" class="overlay-btn">‹</button>
+          <span id="overlay-title">Commentary</span>
+        </div>
+        <button id="overlay-close" class="overlay-btn">✕</button>
       </div>
       <div id="overlay-content"></div>
     </div>
   </div>
+
   <script>
-    const chapterSelect = document.getElementById('chapter-select');
-    const chapterTitle   = document.getElementById('chapter-title');
-    const textContainer  = document.getElementById('text');
-    const tooltip        = document.getElementById('tooltip');
-    const overlay        = document.getElementById('overlay');
-    const overlayContent = document.getElementById('overlay-content');
-    const overlayTitle   = document.getElementById('overlay-title');
-    const overlayClose   = document.getElementById('overlay-close');
+    const chapterSelect   = document.getElementById('chapter-select');
+    const chapterTitle    = document.getElementById('chapter-title');
+    const textContainer   = document.getElementById('text');
+    const tooltip         = document.getElementById('tooltip');
+    const overlay         = document.getElementById('overlay');
+    const overlayContent  = document.getElementById('overlay-content');
+    const overlayTitle    = document.getElementById('overlay-title');
+    const overlayClose    = document.getElementById('overlay-close');
+    const overlayBack     = document.getElementById('overlay-back');
 
     let notesDom = null;
     let notesHtml = '';
+    let overlayStack = [];  // stack of { html, title }
 
     async function fetchJSON(url) {
       const res = await fetch(url);
@@ -185,7 +235,7 @@
     async function loadChapter(id) {
       textContainer.textContent = 'Loading…';
       tooltip.style.display = 'none';
-      overlay.classList.remove('visible');
+      closeOverlayCompletely();
 
       const data = await fetchJSON('/api/chapter/' + encodeURIComponent(id));
 
@@ -199,22 +249,40 @@
       );
       notesDom = doc.getElementById('notes-root');
 
-      wireTextLinks();
+      wireTextLinks(textContainer);
     }
 
-    function wireTextLinks() {
-      const links = textContainer.querySelectorAll('a');
+    function isAdaLocalHref(href) {
+      if (!href) return true; // plain <a> around phrase
+      href = href.trim();
+      if (href === '#' || href === '') return true;
+      if (href.startsWith('#')) return true;
+      if (/ada\d+ann\.htm/i.test(href)) return true;
+      if (/ada\d+\.htm/i.test(href)) return true;
+      if (/^https?:\/\/www\.ada\.auckland\.ac\.nz/i.test(href)) return true;
+      return false;
+    }
+
+    function wireTextLinks(root) {
+      const links = root.querySelectorAll('a');
       links.forEach(a => {
         const href = a.getAttribute('href') || '';
-        const isAdaLocal =
-          href.startsWith('#') ||
-          href === '' ||
-          /ada\d+ann\.htm/i.test(href) ||
-          (/ada\d+\.htm/i.test(href) && !/^https?:/i.test(href));
-
-        if (isAdaLocal) {
+        if (isAdaLocalHref(href)) {
           a.classList.add('note-link');
           a.addEventListener('click', onNoteClick);
+        } else {
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+        }
+      });
+    }
+
+    function wireOverlayLinks() {
+      const links = overlayContent.querySelectorAll('a');
+      links.forEach(a => {
+        const href = a.getAttribute('href') || '';
+        if (isAdaLocalHref(href)) {
+          a.addEventListener('click', onOverlayNoteClick);
         } else {
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
@@ -225,24 +293,15 @@
     function onNoteClick(ev) {
       ev.preventDefault();
       ev.stopPropagation();
+      const phrase = (ev.currentTarget.textContent || '').trim();
+      openNoteForPhrase(phrase);
+    }
 
-      const link = ev.currentTarget;
-      const phrase = (link.textContent || '').trim();
-
-      tooltip.style.display = 'none';
-
-      if (!notesDom || !phrase) {
-        showOverlay(notesHtml, 'Commentary');
-        return;
-      }
-
-      const snippet = findNoteSnippet(phrase);
-
-      if (snippet) {
-        showTooltipAt(ev.clientX, ev.clientY, snippet);
-      } else {
-        showOverlay(notesHtml, 'Commentary');
-      }
+    function onOverlayNoteClick(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const phrase = (ev.currentTarget.textContent || '').trim();
+      openNoteForPhrase(phrase);
     }
 
     function normalize(str) {
@@ -270,7 +329,7 @@
       if (best) {
         const buf = [best.outerHTML];
         let next = best.nextElementSibling;
-        while (next && buf.length < 3) {
+        while (next && buf.length < 4) {
           const t = normalize(next.textContent || '');
           if (!t) break;
           buf.push(next.outerHTML);
@@ -280,53 +339,74 @@
       }
 
       const fullText = normalize(notesDom.textContent || '');
-      if (fullText.includes(normPhrase)) return '';
+      if (fullText.includes(normPhrase)) {
+        // found somewhere but not neatly; let caller decide to use full notes
+        return '';
+      }
 
       return '';
     }
 
-    function showTooltipAt(x, y, html) {
-      if (!html) {
-        showOverlay(notesHtml, 'Commentary');
+    function openNoteForPhrase(phrase) {
+      if (!notesDom) {
+        pushOverlay(notesHtml, 'Commentary');
         return;
       }
-      tooltip.innerHTML = html;
-      tooltip.style.display = 'block';
-
-      const margin = 8;
-      const rect = tooltip.getBoundingClientRect();
-      let left = x - rect.width / 2;
-      let top  = y + 12;
-
-      if (left < margin) left = margin;
-      if (left + rect.width > window.innerWidth - margin) {
-        left = window.innerWidth - rect.width - margin;
-      }
-      if (top + rect.height > window.innerHeight - margin) {
-        top = y - rect.height - 12;
-      }
-
-      tooltip.style.left = left + 'px';
-      tooltip.style.top  = top + 'px';
+      const snippet = phrase ? findNoteSnippet(phrase) : '';
+      const html = snippet || notesHtml;
+      const title = phrase || 'Commentary';
+      pushOverlay(html, title);
     }
 
-    function showOverlay(html, title) {
-      overlayContent.innerHTML = html || '<p>No commentary found.</p>';
-      overlayTitle.textContent = title || 'Commentary';
+    function pushOverlay(html, title) {
+      overlayStack.push({ html: html || '<p>No commentary found.</p>', title });
+      renderOverlay();
+    }
+
+    function renderOverlay() {
+      if (!overlayStack.length) {
+        closeOverlayCompletely();
+        return;
+      }
+      const top = overlayStack[overlayStack.length - 1];
+      overlayContent.innerHTML = top.html;
+      overlayTitle.textContent = top.title || 'Commentary';
       overlay.classList.add('visible');
+      if (overlayStack.length > 1) {
+        overlay.classList.add('has-stack');
+      } else {
+        overlay.classList.remove('has-stack');
+      }
+      wireOverlayLinks();
     }
+
+    function popOverlay() {
+      if (overlayStack.length > 1) {
+        overlayStack.pop();
+        renderOverlay();
+      } else {
+        closeOverlayCompletely();
+      }
+    }
+
+    function closeOverlayCompletely() {
+      overlayStack = [];
+      overlay.classList.remove('visible');
+      overlay.classList.remove('has-stack');
+      overlayContent.innerHTML = '';
+    }
+
+    overlayBack.addEventListener('click', () => {
+      popOverlay();
+    });
 
     overlayClose.addEventListener('click', () => {
-      overlay.classList.remove('visible');
+      closeOverlayCompletely();
     });
 
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.classList.remove('visible');
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!tooltip.contains(e.target)) {
-        tooltip.style.display = 'none';
+      if (e.target === overlay) {
+        closeOverlayCompletely();
       }
     });
 
@@ -338,6 +418,7 @@
       });
     });
 
+    // init
     loadChapterList().catch(err => {
       console.error(err);
       textContainer.textContent = 'Failed to load chapter list.';
