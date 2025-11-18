@@ -25,6 +25,35 @@ app.get('/api/chapters', (req, res) => {
   res.json(CHAPTERS.map(({ id, title }) => ({ id, title })));
 });
 
+function stripLegacyStyling(root) {
+  root.querySelectorAll('style, link').forEach(el => el.remove());
+  root.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+}
+
+function fixImages(root, baseUrl) {
+  root.querySelectorAll('img[src]').forEach(img => {
+    const src = img.getAttribute('src') || '';
+    if (!src) return;
+
+    // make src absolute relative to the original page
+    if (!/^https?:\/\//i.test(src)) {
+      try {
+        const abs = new URL(src, baseUrl).toString();
+        img.setAttribute('src', abs);
+      } catch (e) {
+        // ignore bad URLs
+      }
+    }
+
+    img.removeAttribute('width');
+    img.removeAttribute('height');
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+    img.style.margin = '12px auto';
+  });
+}
+
 app.get('/api/chapter/:id', async (req, res) => {
   const chapter = getChapter(req.params.id);
   if (!chapter) {
@@ -55,10 +84,12 @@ app.get('/api/chapter/:id', async (req, res) => {
     let textRoot = textDoc.querySelector('#text') || textDoc.querySelector('body');
     let notesRoot = notesDoc.querySelector('#annotations') || notesDoc.querySelector('body');
 
-    textRoot.querySelectorAll('style, link').forEach(el => el.remove());
-    notesRoot.querySelectorAll('style, link').forEach(el => el.remove());
-    textRoot.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
-    notesRoot.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+    stripLegacyStyling(textRoot);
+    stripLegacyStyling(notesRoot);
+
+    // fix images so they load from the Ada host, not Render
+    fixImages(textRoot, chapter.textUrl);
+    fixImages(notesRoot, chapter.notesUrl);
 
     res.json({
       id: chapter.id,
