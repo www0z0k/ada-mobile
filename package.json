@@ -1,1 +1,13 @@
-{\n  "name": "ada-mobile-wrapper",\n  "version": "1.0.0",\n  "type": "module",\n  "scripts": {\n    "start": "node server.js"\n  },\n  "dependencies": {\n    "express": "^4.19.0",\n    "jsdom": "^24.0.0",\n    "node-fetch": "^3.3.2"\n  }\n}
+{
+    "name": "ada-mobile-wrapper",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+            "start": "node server.js"
+    },
+      "dependencies": {
+    "express": "^4.19.0",
+        "jsdom": "^24.0.0",
+           "node-fetch": "^3.3.2"
+          }
+}
