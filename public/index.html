@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ada (Mobile Wrapper)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      font-family: -apple-system, system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #f5f5f5;
+    }
+    body { margin: 0; background: #0a0a0a; }
+    #app {
+      max-width: 700px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #111;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #222;
+    }
+    header h1 {
+      font-size: 16px;
+      margin: 0;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    header select {
+      background: #222;
+      color: #f5f5f5;
+      border-radius: 6px;
+      border: 1px solid #333;
+      padding: 4px 8px;
+      font-size: 14px;
+    }
+    main {
+      padding: 12px 16px 24px;
+      line-height: 1.6;
+      font-size: 17px;
+    }
+    #text { overflow-wrap: break-word; }
+    #text a {
+      color: #6ab4ff;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      z-index: 100;
+      align-items: flex-end;
+    }
+    #overlay.visible { display: flex; }
+    #overlay-inner {
+      background: #111;
+      border-radius: 16px 16px 0 0;
+      max-height: 80vh;
+      width: 100%;
+      max-width: 700px;
+      margin: 0 auto;
+      box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+    }
+    #overlay-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid #222;
+    }
+    #overlay-header span {
+      font-size: 14px;
+      color: #aaa;
+    }
+    #overlay-header button {
+      background: #222;
+      border: none;
+      color: #f5f5f5;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 16px;
+    }
+    #overlay-content {
+      padding: 10px 14px 16px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    #overlay-content a {
+      color: #6ab4ff;
+    }
+    #tooltip {
+      position: fixed;
+      max-width: 90vw;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      line-height: 1.4;
+      z-index: 90;
+      display: none;
+    }
+    @media (max-width: 480px) {
+      main {
+        padding-inline: 14px;
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1 id="chapter-title">Ada – Mobile</h1>
+      <select id="chapter-select"></select>
+    </header>
+    <main>
+      <div id="text">Loading…</div>
+    </main>
+  </div>
+  <div id="tooltip"></div>
+  <div id="overlay">
+    <div id="overlay-inner">
+      <div id="overlay-header">
+        <span id="overlay-title">Commentary</span>
+        <button id="overlay-close">✕</button>
+      </div>
+      <div id="overlay-content"></div>
+    </div>
+  </div>
+  <script>
+    const chapterSelect = document.getElementById('chapter-select');
+    const chapterTitle   = document.getElementById('chapter-title');
+    const textContainer  = document.getElementById('text');
+    const tooltip        = document.getElementById('tooltip');
+    const overlay        = document.getElementById('overlay');
+    const overlayContent = document.getElementById('overlay-content');
+    const overlayTitle   = document.getElementById('overlay-title');
+    const overlayClose   = document.getElementById('overlay-close');
+
+    let notesDom = null;
+    let notesHtml = '';
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
+    async function loadChapterList() {
+      const chapters = await fetchJSON('/api/chapters');
+      chapterSelect.innerHTML = '';
+      chapters.forEach((ch, idx) => {
+        const opt = document.createElement('option');
+        opt.value = ch.id;
+        opt.textContent = ch.title;
+        if (idx === 0) opt.selected = true;
+        chapterSelect.appendChild(opt);
+      });
+      if (chapters.length) {
+        await loadChapter(chapters[0].id);
+      } else {
+        textContainer.textContent = 'No chapters configured yet.';
+      }
+    }
+
+    async function loadChapter(id) {
+      textContainer.textContent = 'Loading…';
+      tooltip.style.display = 'none';
+      overlay.classList.remove('visible');
+
+      const data = await fetchJSON('/api/chapter/' + encodeURIComponent(id));
+
+      chapterTitle.textContent = data.title;
+      textContainer.innerHTML = data.textHtml || '';
+      notesHtml = data.notesHtml || '';
+
+      const doc = new DOMParser().parseFromString(
+        '<div id="notes-root">' + notesHtml + '</div>',
+        'text/html'
+      );
+      notesDom = doc.getElementById('notes-root');
+
+      wireTextLinks();
+    }
+
+    function wireTextLinks() {
+      const links = textContainer.querySelectorAll('a');
+      links.forEach(a => {
+        const href = a.getAttribute('href') || '';
+        const isAdaLocal =
+          href.startsWith('#') ||
+          href === '' ||
+          /ada\d+ann\.htm/i.test(href) ||
+          (/ada\d+\.htm/i.test(href) && !/^https?:/i.test(href));
+
+        if (isAdaLocal) {
+          a.classList.add('note-link');
+          a.addEventListener('click', onNoteClick);
+        } else {
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+        }
+      });
+    }
+
+    function onNoteClick(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      const link = ev.currentTarget;
+      const phrase = (link.textContent || '').trim();
+
+      tooltip.style.display = 'none';
+
+      if (!notesDom || !phrase) {
+        showOverlay(notesHtml, 'Commentary');
+        return;
+      }
+
+      const snippet = findNoteSnippet(phrase);
+
+      if (snippet) {
+        showTooltipAt(ev.clientX, ev.clientY, snippet);
+      } else {
+        showOverlay(notesHtml, 'Commentary');
+      }
+    }
+
+    function normalize(str) {
+      return str.replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function findNoteSnippet(phrase) {
+      const normPhrase = normalize(phrase);
+      if (!normPhrase || !notesDom) return '';
+
+      const candidates = Array.from(notesDom.querySelectorAll('p, div, li, dd'));
+      let best = null;
+      let bestLen = Infinity;
+
+      for (const el of candidates) {
+        const text = normalize(el.textContent || '');
+        if (!text) continue;
+        const idx = text.indexOf(normPhrase);
+        if (idx !== -1 && text.length < bestLen) {
+          best = el;
+          bestLen = text.length;
+        }
+      }
+
+      if (best) {
+        const buf = [best.outerHTML];
+        let next = best.nextElementSibling;
+        while (next && buf.length < 3) {
+          const t = normalize(next.textContent || '');
+          if (!t) break;
+          buf.push(next.outerHTML);
+          next = next.nextElementSibling;
+        }
+        return buf.join('\n');
+      }
+
+      const fullText = normalize(notesDom.textContent || '');
+      if (fullText.includes(normPhrase)) return '';
+
+      return '';
+    }
+
+    function showTooltipAt(x, y, html) {
+      if (!html) {
+        showOverlay(notesHtml, 'Commentary');
+        return;
+      }
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+
+      const margin = 8;
+      const rect = tooltip.getBoundingClientRect();
+      let left = x - rect.width / 2;
+      let top  = y + 12;
+
+      if (left < margin) left = margin;
+      if (left + rect.width > window.innerWidth - margin) {
+        left = window.innerWidth - rect.width - margin;
+      }
+      if (top + rect.height > window.innerHeight - margin) {
+        top = y - rect.height - 12;
+      }
+
+      tooltip.style.left = left + 'px';
+      tooltip.style.top  = top + 'px';
+    }
+
+    function showOverlay(html, title) {
+      overlayContent.innerHTML = html || '<p>No commentary found.</p>';
+      overlayTitle.textContent = title || 'Commentary';
+      overlay.classList.add('visible');
+    }
+
+    overlayClose.addEventListener('click', () => {
+      overlay.classList.remove('visible');
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.classList.remove('visible');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!tooltip.contains(e.target)) {
+        tooltip.style.display = 'none';
+      }
+    });
+
+    chapterSelect.addEventListener('change', () => {
+      const id = chapterSelect.value;
+      loadChapter(id).catch(err => {
+        console.error(err);
+        textContainer.textContent = 'Failed to load chapter.';
+      });
+    });
+
+    loadChapterList().catch(err => {
+      console.error(err);
+      textContainer.textContent = 'Failed to load chapter list.';
+    });
+  </script>
+</body>
+</html>
