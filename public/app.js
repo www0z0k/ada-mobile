@@ -154,12 +154,19 @@ function lookupRefFile(href) {
   const file = normalizeAdaHref(href);
   if (!file) return null;
 
-  // Skip chapter pages (we already handle them via chapterHrefMap)
+  // Skip chapter pages (handled via chapterHrefMap)
   if (/^ada\d+\.htm$/i.test(file)) return null;
   if (/^ada\d+ann\.htm$/i.test(file)) return null;
 
-  // Keep simple digit-prefixed files like 422viskovatov.htm
-  if (/^[0-9][0-9a-z_-]*\.htm$/i.test(file)) return file;
+  // Explicit “index” pages we want to wrap (motifs, persons, etc.)
+  if (/^(motifs|persons|sources)\.htm$/i.test(file)) {
+    return file;
+  }
+
+  // Generic second-tier refs like 422viskovatov.htm
+  if (/^[0-9][0-9a-z_-]*\.htm$/i.test(file)) {
+    return file;
+  }
 
   return null;
 }
