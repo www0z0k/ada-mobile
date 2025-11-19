@@ -30,18 +30,21 @@ function stripLegacyStyling(root) {
   root.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
 }
 
+function stripLineBreaks(root) {
+  root.querySelectorAll('br').forEach(el => el.remove());
+}
+
 function fixImages(root, baseUrl) {
   root.querySelectorAll('img[src]').forEach(img => {
     const src = img.getAttribute('src') || '';
     if (!src) return;
 
-    // make src absolute relative to the original page
     if (!/^https?:\/\//i.test(src)) {
       try {
         const abs = new URL(src, baseUrl).toString();
         img.setAttribute('src', abs);
       } catch (e) {
-        // ignore bad URLs
+        // ignore
       }
     }
 
@@ -87,7 +90,11 @@ app.get('/api/chapter/:id', async (req, res) => {
     stripLegacyStyling(textRoot);
     stripLegacyStyling(notesRoot);
 
-    // fix images so they load from the Ada host, not Render
+    // hard-kill manual column breaks
+    stripLineBreaks(textRoot);
+    stripLineBreaks(notesRoot);
+
+    // make images absolute & responsive
     fixImages(textRoot, chapter.textUrl);
     fixImages(notesRoot, chapter.notesUrl);
 

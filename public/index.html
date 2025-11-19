@@ -197,7 +197,7 @@
     </div>
   </div>
 
-  <script>
+<script>
     const ADA_BASE = 'https://www.ada.auckland.ac.nz/';
 
     const chapterSelect   = document.getElementById('chapter-select');
@@ -262,8 +262,7 @@
       href = href.trim();
       if (href === '' || href === '#') return true;
       if (href.startsWith('#')) return true;
-      if (/ada\d+ann\.htm/i.test(href)) return true;
-      if (/ada\d+\.htm/i.test(href)) return true;
+      if (/ada\d+ann\.htm/i.test(href)) return true; // annotation files
       return false;
     }
 
@@ -272,8 +271,8 @@
       if (/^https?:\/\//i.test(href)) {
         return /^https?:\/\/www\.ada\.auckland\.ac\.nz/i.test(href);
       }
-      // bare "motifs.htm", "persons.htm", "/motifs.htm", etc.
-      return /\.htm$/i.test(href);
+      // motifs.htm, persons.htm, ada11.htm#3.04, etc.
+      return /\.htm(\?|#|$)/i.test(href);
     }
 
     function makeAdaAbsolute(href) {
@@ -297,7 +296,6 @@
           a.rel = 'noopener noreferrer';
         } else {
           if (rawHref && !/^https?:\/\//i.test(rawHref)) {
-            // make other relative links absolute to current origin just so they resolve
             a.href = rawHref;
           }
           a.target = '_blank';
@@ -377,9 +375,7 @@
       }
 
       const fullText = normalize(notesDom.textContent || '');
-      if (fullText.includes(normPhrase)) {
-        return '';
-      }
+      if (fullText.includes(normPhrase)) return '';
 
       return '';
     }
@@ -460,5 +456,6 @@
       textContainer.textContent = 'Failed to load chapter list.';
     });
   </script>
+
 </body>
 </html>
