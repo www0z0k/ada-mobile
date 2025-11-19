@@ -63,12 +63,13 @@ function getChapter(id) {
 app.use(express.static('public'));
 
 app.get('/api/chapters', (req, res) => {
-  // expose textUrl so client can map ada12.htm -> our chapter id
-  res.json(CHAPTERS.map(({ id, title, textUrl }) => ({
-    id,
-    title,
-    textUrl
-  })));
+  res.json(
+    CHAPTERS.map(({ id, title, textUrl }) => ({
+      id,
+      title,
+      textUrl
+    }))
+  );
 });
 
 function stripLegacyStyling(root) {
@@ -107,14 +108,13 @@ function fixImages(root, baseUrl) {
 }
 
 /**
- * Flatten 2-column margin tables into a flowing <p>, but keep
- * the left-column markers as separate lines:
+ * Flatten 2-column margin tables into a flowing <p>,
+ * but keep markers as their own line:
  *
- * row0: [empty] | "…Mount Tabor"
- * row1: "3.05"  | "Ltd., 1880). That pronouncement…"
+ * row0: [empty] | "...Mount Tabor"
+ * row1: "3.05"  | "Ltd., 1880). That pronouncement..."
  *
- * becomes:
- *   …Mount Tabor<br>3.05<br>Ltd., 1880). That pronouncement…
+ * -> ...Mount Tabor<br>3.05<br>Ltd., 1880). That pronouncement...
  */
 function flattenMarginTables(root) {
   if (!root) return;
@@ -185,7 +185,6 @@ app.get('/api/chapter/:id', async (req, res) => {
   }
 
   try {
-    // always fetch text page
     const textResp = await fetch(chapter.textUrl);
     if (!textResp.ok) {
       return res.status(502).json({ error: 'Failed to fetch text page' });
@@ -229,6 +228,48 @@ app.get('/api/chapter/:id', async (req, res) => {
       title: chapter.title,
       textHtml: textRoot.innerHTML,
       notesHtml
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * Generic wrapper for "second-tier" Ada pages like 422viskovatov.htm
+ * We only allow simple filenames like 422viskovatov.htm for safety.
+ */
+app.get('/api/ref/:file', async (req, res) => {
+  const file = req.params.file;
+  if (!/^[0-9A-Za-z_-]+\.htm$/i.test(file)) {
+    return res.status(400).json({ error: 'Invalid reference file' });
+  }
+
+  const url = `https://www.ada.auckland.ac.nz/${file}`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      return res.status(502).json({ error: 'Failed to fetch reference page' });
+    }
+    const html = await resp.text();
+
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+    let root = doc.querySelector('body') || doc.documentElement;
+
+    stripLegacyStyling(root);
+    stripLineBreaks(root);
+    flattenMarginTables(root);
+    fixImages(root, url);
+
+    const title =
+      (doc.querySelector('title') && doc.querySelector('title').textContent) ||
+      file;
+
+    res.json({
+      title,
+      html: root.innerHTML
     });
   } catch (err) {
     console.error(err);

@@ -146,6 +146,36 @@ function lookupChapterIdForHref(href) {
   return chapterHrefMap[key] || null;
 }
 
+/**
+ * Decide if a href points to a "second-tier" Ada page we
+ * want to wrap via /api/ref/..., e.g. 422viskovatov.htm
+ */
+function lookupRefFile(href) {
+  const file = normalizeAdaHref(href);
+  if (!file) return null;
+
+  // Skip chapter pages (we already handle them via chapterHrefMap)
+  if (/^ada\d+\.htm$/i.test(file)) return null;
+  if (/^ada\d+ann\.htm$/i.test(file)) return null;
+
+  // Keep simple digit-prefixed files like 422viskovatov.htm
+  if (/^[0-9][0-9a-z_-]*\.htm$/i.test(file)) return file;
+
+  return null;
+}
+
+async function openRefPage(file) {
+  try {
+    const data = await fetchJSON('/api/ref/' + encodeURIComponent(file));
+    const html = data.html || '<p>No content.</p>';
+    const title = data.title || file;
+    pushOverlay(html, title);
+  } catch (err) {
+    console.error(err);
+    pushOverlay('<p>Failed to load reference page.</p>', file);
+  }
+}
+
 function wireTextLinks(root) {
   const links = root.querySelectorAll('a');
   links.forEach(a => {
@@ -170,14 +200,25 @@ function wireTextLinks(root) {
       return;
     }
 
-    // 3) Other Ada docs -> open original AdaOnline page
+    // 3) Second-tier Ada reference pages (e.g. 422viskovatov.htm)
+    const refFile = lookupRefFile(rawHref);
+    if (refFile) {
+      a.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openRefPage(refFile);
+      });
+      return;
+    }
+
+    // 4) Other Ada docs -> open original AdaOnline page
     if (isRelativeAdaDoc(rawHref)) {
       const abs = makeAdaAbsolute(rawHref);
       a.setAttribute('href', abs);
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
     } else {
-      // 4) Generic external / relative links
+      // 5) Generic external / relative links
       if (rawHref && !/^https?:\/\//i.test(rawHref)) {
         a.href = rawHref;
       }
@@ -211,7 +252,18 @@ function wireOverlayLinks() {
       return;
     }
 
-    // 3) Other Ada docs
+    // 3) Second-tier Ada reference pages from within notes
+    const refFile = lookupRefFile(rawHref);
+    if (refFile) {
+      a.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openRefPage(refFile);
+      });
+      return;
+    }
+
+    // 4) Other Ada docs
     if (isRelativeAdaDoc(rawHref)) {
       const abs = makeAdaAbsolute(rawHref);
       a.setAttribute('href', abs);
