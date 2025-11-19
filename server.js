@@ -47,7 +47,7 @@ function fixImages(root, baseUrl) {
         const abs = new URL(src, baseUrl).toString();
         img.setAttribute('src', abs);
       } catch (e) {
-        // ignore bad urls
+        // ignore
       }
     }
 
@@ -61,12 +61,14 @@ function fixImages(root, baseUrl) {
 }
 
 /**
- * ADAonline uses 2-column tables:
- *   left column: margin note number (3.05 etc)
- *   right column: actual text, one line per <tr>
+ * Flatten 2-column margin tables into a flowing <p>, but keep
+ * the left-column markers as separate lines:
  *
- * This flattens such tables into a single <p> with all right-cell
- * contents concatenated, so we get normal flowing paragraphs.
+ * row0: [empty] | "…Mount Tabor"
+ * row1: "3.05"  | "Ltd., 1880). That pronouncement…"
+ *
+ * becomes:
+ *   …Mount Tabor<br>3.05<br>Ltd., 1880). That pronouncement…
  */
 function flattenMarginTables(root) {
   if (!root) return;
@@ -76,8 +78,6 @@ function flattenMarginTables(root) {
     const trs = Array.from(table.querySelectorAll('tr'));
     if (!trs.length) return;
 
-    // Only touch tables that *look* like the margin layout:
-    // every row has exactly 2 TDs.
     const allTwoCols = trs.every(tr => {
       const cells = tr.children;
       return (
@@ -95,16 +95,41 @@ function flattenMarginTables(root) {
     trs.forEach((tr, idx) => {
       const cells = tr.querySelectorAll('td');
       if (cells.length < 2) return;
+
+      const marginCell  = cells[0];
       const contentCell = cells[1];
 
-      // Add a separating space between rows (so words don't glue).
-      if (idx > 0) {
-        wrapper.appendChild(doc.createTextNode(' '));
+      const hasMarker = (marginCell.textContent || '').trim() !== '';
+
+      // Pull children into fragments (so we can re-use them cleanly)
+      const markerFrag = doc.createDocumentFragment();
+      while (marginCell.firstChild) {
+        markerFrag.appendChild(marginCell.firstChild);
       }
 
-      // Move all child nodes from contentCell into wrapper
+      const contentFrag = doc.createDocumentFragment();
       while (contentCell.firstChild) {
-        wrapper.appendChild(contentCell.firstChild);
+        contentFrag.appendChild(contentCell.firstChild);
+      }
+
+      if (idx === 0) {
+        // First row: usually just the opening text line.
+        // If it has a marker (rare), put: marker<br>text
+        if (hasMarker) {
+          wrapper.appendChild(markerFrag);
+          wrapper.appendChild(doc.createElement('br'));
+        }
+        wrapper.appendChild(contentFrag);
+      } else if (hasMarker) {
+        // Normal case: line with section marker like 3.05
+        wrapper.appendChild(doc.createElement('br'));
+        wrapper.appendChild(markerFrag);
+        wrapper.appendChild(doc.createElement('br'));
+        wrapper.appendChild(contentFrag);
+      } else {
+        // Continuation line without marker: treat as space-continued text
+        wrapper.appendChild(doc.createTextNode(' '));
+        wrapper.appendChild(contentFrag);
       }
     });
 
@@ -142,10 +167,10 @@ app.get('/api/chapter/:id', async (req, res) => {
     let textRoot = textDoc.querySelector('#text') || textDoc.querySelector('body');
     let notesRoot = notesDoc.querySelector('#annotations') || notesDoc.querySelector('body');
 
-    // Clean & normalize both
     stripLegacyStyling(textRoot);
     stripLegacyStyling(notesRoot);
 
+    // remove original <br>s, then we add our own for markers
     stripLineBreaks(textRoot);
     stripLineBreaks(notesRoot);
 
